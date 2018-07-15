@@ -56,150 +56,7 @@ nrow(orders[is.na(orders$days_since_prior_order),])
 orders = na.omit(orders)
 #these NA's are removed. There are no -ve values so need to handle that
 
-# length(orders$order_id)#845953
-# #select distinct order_ids
-# length(unique(orders$order_id)) #845953
-# #there are no duplicate order_id 
-
-
-
-# trainOrders = orders %>% filter(eval_set =="train") %>% select(order_id)
-# set.seed(9383)
-# trainSet = as.logical(
-#   rbinom(
-#     n = nrow(trainOrders), 
-#     size = 1, 
-#     prob = 0.8
-#   )
-# )
-# trainingIDs = trainOrders %>% filter(trainSet)
-# head(trainingIDs,10)
-# validationIDs = trainOrders %>% filter(!trainSet)
-# head(validationIDs,10)
-# nrow(trainingIDs) #27527
-# nrow(validationIDs) #6799 
-# 
-# #Now, see which products are listed in my sample submission form
-# str(sampSub)
-# head(sampSub,10)
-# #I can see that products are listed as strings under products which itself is in sampSub list
-# sampResults = strsplit(sampSub$products[1],"\\ ") 
-# sampResults = as.numeric(sampResults[[1]]) #first element of first list
-# sampResults
-# #Now product ids are seperated and converted into Numeric
-# 
-# #let's see which items are these
-# head(items,2)
-# items[(items$product_id == 39276),]
-# #bananas
-# items[(items$product_id == 29259),]
-# #Baby Bananas
-# 
-# 
-# #let's validate these products in my validation Order ids if they actually contain these products
-# #I'll pass the validationIds and products from my sampleSubmission. Just one row is fine
-# #as all products are duplicate
-# validateProducts = data.frame(order_id = validationIDs, products = sampSub[1,2])
-# head(validateProducts,10)
-# str(validateProducts)
-# #Again the products are factors. Convert them to char
-# validateProducts[,2] = as.character(validateProducts[,2])
-# #Now, converted into char
-# head(validateProducts,2)
-# 
-# #Now join orders from Orders data set with Training Order Items
-# #We want all orderIds from Training Order Items and matching ones in training set
-# #Also, only those products which are reordered i.e. reordered =1
-# TrainModel = filter(orders, eval_set == "train") %>% left_join(Order_Items_Train_Data,by = "order_id") %>% 
-#   filter(reordered == 1) %>% select("order_id","product_id","add_to_cart_order")%>%
-#   group_by(order_id) %>%
-#   mutate(productNames = paste0(product_id, collapse = " ")) 
-# 
-# View(head(TrainModel,10)) 
-# 
-# 
-# 
-# #take out the count of all distinct orders for customers in Train and Orders
-# nOrders = Order_Items_Train_Data %>% inner_join(orders,by ="order_id") %>% 
-#    group_by(user_id) %>% mutate(no_orders = n_distinct(order_id)) %>%
-#    select("user_id","order_id","no_orders") %>% arrange(user_id)
-#   
-# 
-# View(head(nOrders,100))
-# #There is only one order per user
-# 
-# #take out the count of all user-items pair and see in how many orders for the user are they occuring
-# ProductsInOrderPercentage = Order_Items_Train_Data %>% inner_join(orders) %>% 
-#   group_by(user_id, product_id) %>% summarize(count = n()) %>%
-#   inner_join(nOrders,by="user_id") %>% mutate(Percentage = count/no_orders) %>% 
-#   arrange(desc(Percentage)) %>% select(user_id, product_id,order_id,Percentage) 
-# View(head(ProductsInOrderPercentage,10))
-# 
-# 
-# 
-# 
-# EvaluatePercentage = ProductsInOrderPercentage %>% filter(Percentage >= 0.5)
-# head(EvaluatePercentage,10)
-# nrow(ProductsInOrderPercentage) #172458
-# nrow(EvaluatePercentage) #172458 almost all orders
-# 
-# 
-# #Logistic regression
-# trainOrdersDays = orders %>% filter(eval_set == "train") %>% select(order_id, user_id, days_since_prior_order)
-# head(trainOrdersDays,10)
-#   
-# trainOrdersItems = Order_Items_Train_Data %>% filter(reordered == 1)%>% 
-#   group_by(order_id) %>% mutate(prods = paste0(product_id, collapse = " "))  %>%
-#   select(order_id, prods) %>% unique()
-# View(trainOrdersItems)
-# head(trainOrdersItems,10)
-# 
-# #please run this function and calling variable together
-# word.in.sentence = function(word, sentence){
-#   word %in% strsplit(sentence, split = " ")[[1]]
-# }
-# ItemsInOrders = trainOrdersDays %>% inner_join(ProductsInOrderPercentage) %>% inner_join(trainOrdersItems) %>% group_by(order_id) %>% 
-#   mutate(Exists = word.in.sentence(product_id, prods)) %>% data.frame()
-# ItemsInOrders
-# View(ItemsInOrders)
-# 
-# # let's train a logistic regression model with days_since_prior_order and Percentage as the regressors.
-# LinearRelation = glm(Exists ~ Percentage + days_since_prior_order, data = ItemsInOrders, family = binomial)
-# summary(LinearRelation)
-# 
-# 
-# #Now, this model outputs an updated "probability" of a certain item 
-# #being in an order which is an increasing function of the fraction of 
-# #prior orders and a decreasing function of the time since the previous 
-# #order was made - the longer a user waits between orders, the less 
-# #likely it is that they will buy something! Is this too simple?
-# 
-# 
-# qplot(n, data = count(orders, user_id), bins = 97)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+ 
 #now the NAs are removed. We only focus on returning customers with unique orderIds
 length(orders$order_id)#845953
 length(unique(orders$order_id)) #845953
@@ -373,26 +230,6 @@ ggplot(Insta_cust_RFM, aes(x=user_id, y=order_dow)) +
   theme(panel.grid.major = element_line(colour = "tan1"))
 
 
-# ggplot(orders, aes(x = days_since_prior_order)) +
-#   geom_bar(fill = c("pink", rep("grey25", 6), 
-#                     "pink", rep("grey25", 6), 
-#                     "pink", rep("grey25", 6),
-#                     "pink", rep("grey25", 6),
-#                     "pink", "grey50", "pink")) +
-#   theme_minimal() +
-#   theme(axis.ticks.x = element_blank(),
-#         axis.ticks.y = element_blank(),
-#         legend.position = "none",
-#         panel.grid.major = element_blank()) +
-#   labs(x = "Days Since Prior Order",
-#        y = "Count",
-#        title = "Distribution of Orders by Days Since Prior Order") +
-#   scale_y_continuous(labels = "comma",breaks = "comma" )
-
-#ggplot(Insta_cust_HighestFreqPlot5, aes(order_dow)) +
-#  geom_histogram()
-
-
 #Now we'll study the relationships between orders and products
 order_Item_train_set = merge(orderDetails,items, by = "product_id")
 head(order_Item_train_set)
@@ -466,10 +303,6 @@ hist(LastItem$order_dow,
      col = "red", border ="black",
      xlim =c(0,6))
 
-
-
-
-
 #apriori algorithm
 #group the items by order_id
 Insta_prod_aprio = order_Item_train_set %>%
@@ -523,15 +356,6 @@ write.csv(Insta_prod_order_List_new,"Insta_Order_User_Products.csv", row.names =
 #install.packages("arules", dependencies=TRUE)
 library(arules) 
 require(arules)
-
-# txn = read.transactions(file="InstaProdOrder.csv", rm.duplicates= TRUE, format="basket",sep=",",cols=1)
-# txn
-# txn1 = read.transactions(file="InstaProdOrder.csv", sep=",",cols=1)
-# txn1
-
-# txn3 = read.transactions(file="InstaProdOrder2.csv")
-# txn3
-# summary(txn3)
 
 #There is a problem with commas in the file so please change commas to / in notepad and save as .csv
 txn4 = read.transactions(file="InstaProdNotepad.csv",sep="/")
@@ -747,18 +571,6 @@ ItemsInOrders
 LinearRelation = glm(Exists ~ Percentage + days_since_prior_order, data = ItemsInOrders, family = binomial)
 summary(LinearRelation)
 
-
-#Now, this model outputs an updated "probability" of a certain item 
-#being in an order which is an increasing function of the fraction of 
-#prior orders and a decreasing function of the time since the previous 
-#order was made - the longer a user waits between orders, the less 
-#likely it is that they will buy something! Is this too simple?
-
-
-################################################################
-
-
-
 #Logistic regression
 priorOrdersDays = orders %>% filter(eval_set == "prior") %>% select(order_id, user_id, days_since_prior_order)
 head(priorOrdersDays,10)
@@ -791,7 +603,7 @@ summary(LinearRelation)
 #being in an order which is an increasing function of the fraction of 
 #prior orders and a decreasing function of the time since the previous 
 #order was made - the longer a user waits between orders, the less 
-#likely it is that they will buy something! The higher the 
+#likely it is that they will buy something! 
 
 
 
