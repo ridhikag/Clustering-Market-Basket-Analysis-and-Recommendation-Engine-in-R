@@ -1,0 +1,463 @@
+---
+title: "Instacart Market Basket Analysis & Customer Segmentation"
+author: "Ridhika Gupta"
+date: "March 27, 2018"
+output: word_document
+---
+
+Introduction
+Instacart is an American company that operates as a same-day grocery delivery service. Customers select groceries through a web application from various retailers and delivered by a personal shopper.This analysis is based on Instacart's dataset of 3 million anonymous orders. The goal is to predict which items out of previously purchased ones will be included in a customer's next order.
+
+
+Research Objectives
+In this study, we expect to analyse below set of problems
+1. Exploratory analysis of the customers & items in the dataset
+  a. Analyze the customers purchasing behaviour using Customer Segmentation.
+  b. Analyze the items in the basket.
+  c. Analyze the relationship between Customer and Items.
+
+2. Use Association rules for MBA 
+  . Use Arules and Apriori algorithm to perform MBA
+  . Identify the percentage of items w.r.t all the orders from User.
+
+3. Predict items in the customer's cart using a logistic regression model
+  . Identify the correct predictors and interpret the model.
+  . Evaluate the model's predictive power on test data.
+    Match with the sample results given from Instacart
+    
+Benefits
+Store, catalogue, site layout for improveed customer shopping experience.
+Marketing (e.g. target customers who buy flour with offers on eggs, to encourage them to spend more on their shopping basket).
+Drive recommendation engines.
+Deliver targeted marketing (e.g. emailing customers who bought specific products for offers on those products.
+    
+Dataset Information
+The data comprised of five ".csv" files.
+   1. aisles.csv : aisle information
+   2. departments.csv: departments information
+   3. order_products__prior.csv : Order, product, reorder, add_to_cart 
+   4. order_products__train.csv : Order, product, reorder, add_to_cart 
+   5. orders.csv : Order, user, eval_set, order dow, order hour_of_day, days_since_prior_order
+   6. products.csv : products, aisles, departments      
+   7. sample_submission.csv : Expected outcome
+
+Tools and packages used for this analysis
+```{r setup, include=FALSE}
+setwd("G:/UCSC/Data Analysis & R/Project/ProjectDataUse/")
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(arules)
+library(arulesViz) 
+```
+
+Load Orders_products_prior data
+```{r}
+setwd("G:/UCSC/Data Analysis & R/Project/ProjectDataUse/")
+order_item_data = read.csv("order_products__prior.csv",nrows = 60000)
+head(order_item_data,10)
+summary(order_item_data)
+```
+Load aisles data
+```{r}
+aisles = read.csv("aisles.csv")
+dim(aisles)
+summary(aisles)
+```
+Load departments data
+```{r}
+departments = read.csv("departments.csv")
+dim(departments)
+head(departments,10)
+```
+Load orders data(limit the no. of rows as needed)
+```{r}
+setwd("G:/UCSC/Data Analysis & R/Project/ProjectDataUse/")
+orders = read.csv("orders.csv",nrows = 900000)
+summary(orders)
+head(orders,10)
+```
+This data set has lot of NAs
+
+```{r}
+nrow(orders[is.na(orders$days_since_prior_order),])
+orders = na.omit(orders)
+```
+These NAs are removed. There are no -ve values now.
+
+Expected outcome is present in sample_submission.csv. Let's load the data and look at its contents.
+```{r}
+setwd("G:/UCSC/Data Analysis & R/Project/ProjectDataUse/")
+sampSub= read.csv("sample_submission.csv",stringsAsFactors = F)
+str(sampSub)
+head(sampSub,10)
+```
+
+Check unique orderIds and after that, plot no. of distinct orders.
+```{r}
+length(unique(orders$order_id)) 
+hist(orders$order_id,
+     main = "No. of Orders",
+     xlab = "Orders",
+     ylab = "count",
+      col = "light blue", border ="black")
+```
+
+Let's begin with User Segmentation and let's see orders for each customer.
+```{r}
+OrdersPerCustomer <- orders %>%
+  group_by(user_id) %>%
+  mutate(distinctOrders=n_distinct(order_id)) %>% 
+  arrange(desc(distinctOrders))
+head(OrdersPerCustomer)
+```
+```{r}
+qplot(n, data = count(orders, user_id), bins = 95)
+```
+
+This graph shows the orders count for n(users). As we can see, the distribution is right skewed and maximum order count is 100.
+
+let's see users who have placed more than 90 orders and plot their counts. Take a sample user and see his/her relative order count.
+```{r}
+TopCustomerCount = OrdersPerCustomer %>% group_by(eval_set,user_id,distinctOrders)%>% 
+  filter(distinctOrders>90)
+Top1CustomerCount = TopCustomerCount[which(TopCustomerCount$user_id==210),]
+hist(Top1CustomerCount$order_dow,
+     main = "User 210 Sales",
+     xlab = "Order dow",
+     ylab = "count",
+     col = "orange", border ="black")
+```
+
+Combine orders and products data and order them by eval_set.
+
+```{r}
+orderDetails= merge(x=orders, y=order_item_data, by="order_id")
+orderDetails = orderDetails %>% group_by(eval_set)
+head(orderDetails,10)
+```
+
+Segment the users based on RFM. Check how frequent customers make orders and how recent did they make the orders.
+Using RFM, we can answer below questions.
+   The latest transaction by the customer. 
+   How many orders are created by the customer? 
+   How many products are bought by the customer?
+   
+```{r}
+Insta_cust_RFM = orderDetails %>%
+  group_by(user_id) %>%
+  mutate(frequency=n_distinct(order_id),
+         recency=min(days_since_prior_order),
+         monetary = n_distinct(product_id)) 
+head(Insta_cust_RFM)
+summary(Insta_cust_RFM)
+```
+
+Look at the correlation in the customer segmentation continous variables.
+
+```{r}
+cor(Insta_cust_RFM[,c(-1,-2,-3,-8,-10)])
+```
+
+Please see there is a high correlation between days_since_prior_order and recency.
+Add_to_cart_order and monetary(containing products info), Order_number and frequency.
+Let's visualize the correlations.
+
+```{r}
+pairs(Insta_cust_RFM[,c(-1,-2,-3,-8,-10)])
+```
+
+Find those userIds which have higher frequency and order maximum products.
+Take a sample user from these userIds and see on which days this user orders products.
+```{r}
+Insta_cust_HighestFreq = Insta_cust_RFM %>% group_by(user_id) %>%
+  filter(frequency>1) %>% arrange(desc(monetary)) %>% 
+  filter(recency< 10) %>% ungroup() %>% sample_n(10) %>% arrange(desc(monetary))
+Insta_cust_HighestFreqPlot2 = Insta_cust_RFM[which(Insta_cust_RFM$user_id==17155),]
+hist(Insta_cust_HighestFreqPlot2$order_dow,
+     main = "User 17155 Orders",
+     xlab = "Order dow",
+     ylab = "count",
+     col = "light yellow", border ="black",
+     xlim =c(0,6))
+```
+
+This clearly shows that user 17155 only orders products on (0,1) days; probably they are weekend days.
+
+Let's see for one more user to differentiate the buying trends
+```{r}
+Insta_cust_HighestFreqPlot5 = Insta_cust_RFM[which(Insta_cust_RFM$user_id==45587),]
+hist(Insta_cust_HighestFreqPlot5$order_dow,
+     main = "User 45587 Orders",
+     xlab = "Order dow",
+     ylab = "count",
+     col = "light green", border ="black",
+     xlim =c(0,6))
+```
+
+User 45587 again showed a pattern as it only buys on 6th day.
+
+Now, divide the customers based on their RFM and analyse them based on days_of_week(dow), frequency, monetary and recency.
+```{r}
+set.seed(42)
+clus = kmeans(Insta_cust_RFM[,11:13], 4)
+clus$cluster = as.factor(clus$cluster)
+(clus$centers)
+```
+
+Let's see dow trend for all the orders
+```{r}
+ggplot(Insta_cust_RFM, aes(order_dow)) + geom_histogram()
+```
+
+Plot monetary trend for all the customers
+
+```{r}
+ggplot(Insta_cust_RFM, aes(monetary,color ="grey")) + geom_histogram()
+```
+
+Plot monetary vs frequency and how they vary for different clusters(users differentiated on RFM)
+
+```{r}
+ggplot(Insta_cust_RFM, aes(monetary,frequency,color =clus$cluster)) + geom_point()
+```
+
+Let's see on which days of the week, different user clusters order products.
+
+```{r}
+ggplot(Insta_cust_RFM, aes(x=user_id, y=order_dow)) +
+  geom_point(alpha=0.02, aes(size=monetary)) +
+  geom_smooth(method = "auto") +
+  theme(panel.grid.major = element_line(colour = "tan1"))
+```
+
+This graph shows that order_dow = (0,1,6) are clearly favourites amongst the users.
+
+
+Now Let's analyse the products. Which are the top products, their departments, trends.
+Segregate them w.r.t latest order to the product, how many orders are created for the product and how many times this product has been added.
+```{r}
+setwd("G:/UCSC/Data Analysis & R/Project/ProjectDataUse/")
+order_Item_train_set = merge(orderDetails,items, by = "product_id")
+Insta_prod_RFM = order_Item_train_set %>%
+  group_by(product_id) %>%
+  mutate(frequency=n_distinct(order_id),
+         recency=min(days_since_prior_order),
+         monetary = n()) 
+head(Insta_prod_RFM)
+```
+
+Take out those items which have been ordered more than once.
+```{r}
+Insta_item_HighestFreq = Insta_prod_RFM %>% group_by(product_id) %>%
+  filter(frequency>1) %>% arrange(desc(monetary))%>% 
+  ungroup() %>% sample_n(10) %>% arrange(desc(monetary))
+head(Insta_item_HighestFreq)
+```
+
+See the trend of Top item
+```{r}
+TopItem1= Insta_prod_RFM[(Insta_prod_RFM$product_id==39276),]
+hist(TopItem1$order_dow,
+     main = "Product 39276 pattern",
+     xlab = "Product dow",
+     ylab = "count",
+     col = "light pink", border ="black",
+     xlim =c(0,6)
+     )
+```
+
+
+Lowest Item
+
+```{r}
+LastItem= Insta_prod_RFM[(Insta_prod_RFM$product_id==21333),]
+hist(LastItem$order_dow,
+     main = "Product 21333 pattern",
+     xlab = "Product dow",
+     ylab = "count",
+     col = "red", border ="black",
+     xlim =c(0,6))
+```
+
+Let's analyse the relationship between users and products.
+using MBA(Association rules) and analyse which products can go as a bundle in users' orders.
+Aprori Algorithm on given dataset trains and identifies product baskets and product association rules.
+Let's take out top user and analyse his basket
+
+```{r}
+Insta_prod_user_prio = order_Item_train_set %>%
+  group_by(user_id,order_id)%>% arrange(user_id,order_id) %>% select(user_id,order_id,product_id,order_dow,order_hour_of_day,product_name)
+Insta_prod_user_prio[Insta_prod_user_prio$user_id==17155,]
+```
+
+```{r}
+Insta_prod_user_aprio_sorted = Insta_prod_user_prio[order(Insta_prod_user_prio$order_id),]
+Insta_prod_user_aprio_sorted$order_id = as.numeric(Insta_prod_user_aprio_sorted$order_id)
+Insta_prod_user_aprio_sorted[Insta_prod_user_aprio_sorted$user_id==17155,]
+```
+```{r}
+Insta_prod_order_List_new = ddply(Insta_prod_user_aprio_sorted,c("user_id","order_id","order_dow"), 
+                              function(df1)paste(df1$product_name, 
+                                                 collapse = ","))
+Insta_prod_order_List_new = Insta_prod_order_List_new %>% arrange(user_id,order_id)
+colnames(Insta_prod_order_List_new) = c("user_id","order_id","order_dow","All Items")
+Insta_prod_order_List_new[Insta_prod_order_List_new$user_id==17155,]
+
+```
+
+Now, we have pivoted the items for an order. Let's save them in a file "InstaProdNotepad.csv" and read them again.
+The results are displayed into a sparse matrix.
+
+```{r}
+setwd("G:/UCSC/Data Analysis & R/Project/ProjectDataUse/")
+txn5 = read.transactions(file="Insta_Order_User_Products.csv",sep="/")
+summary(txn5)
+itemFrequencyPlot(txn5,topN=10,type="absolute")
+```
+
+Most frequent items contain Banana, Bag of Organic bananas, organic Strawberries.
+Banana also came as the top item in previous analysis.
+Let's see top 10 items w.r.t  occurence in Orders
+
+```{r}
+inspect(txn5[1:3])
+```
+
+Analyse these items w.r.t probability of occurence in basket.
+
+```{r}
+basket_rules_for_user = apriori(txn5,parameter = list(support = 0.003, confidence = 0.25,minlen=2))
+basket_rules_for_user
+summary(basket_rules_for_user)
+inspect(basket_rules_for_user[1:4]) 
+```
+
+We get a very nice representation of what is existing in LHS and RHS i.e. bundles of products.
+Let's analyse products based on support, confidence and lift.
+
+```{r}
+inspect(sort(basket_rules_for_user,by = "support")[1:8])
+```
+
+```{r}
+my_final_cart_user = as(basket_rules_for_user,"data.frame")
+plot(my_final_cart_user)
+```
+
+Now, see which products are listed in my sample submission form
+
+```{r}
+sampResults = strsplit(sampSub$products[1],"\\ ") 
+sampResults = as.numeric(sampResults[[1]]) 
+sampResults
+items[(items$product_id == 39276),]
+items[(items$product_id == 29259),]
+```
+
+Now make User-item percentages and select 20% for validation
+Partition the training set and select 25% for validation
+Create sample seed of size =1 and prob=0.8
+validate these products in validation Order ids if they actually contain these products
+Pass the validationIds and products from sampleSubmission.
+
+```{r}
+trainOrders = orders %>% filter(eval_set =="train") 
+set.seed(9383)
+trainSet = as.logical(
+  rbinom(
+    n = nrow(trainOrders), 
+    size = 1, 
+    prob = 0.8
+  )
+)
+trainingIDs = trainOrders %>% filter(trainSet)
+validationIDs = trainOrders %>% filter(!trainSet)
+validateProducts[,2] = as.character(validateProducts[,2])
+head(validateProducts,2)
+
+```
+Verified that validation order ids(in training data set) contain these products.
+
+Now, let's analyse the percentage of products in User's basket.
+For this, take out all the orders for customers. I have verified the results using user_id 17155.
+```{r}
+nOrders = order_item_data %>% inner_join(orders,by ="order_id") %>% 
+  group_by(user_id) %>% mutate(no_orders = n_distinct(order_id)) %>%
+  select("user_id","order_id","no_orders") %>% arrange(desc(no_orders))
+nOrders[nOrders$user_id==17155,]
+```
+
+Take out all the products 
+```{r}
+ProductsInOrderPercentage1 = order_item_data %>% inner_join(orders) %>% 
+  group_by(user_id, product_id) %>% mutate(count = n()) %>%
+  select(user_id, product_id,order_id,order_number,order_dow,count)%>% 
+  arrange(user_id,product_id,order_id) %>% arrange(desc(count))
+ProductsInOrderPercentage1[ProductsInOrderPercentage1$user_id==17155,]
+
+```
+ Derive the percentage of products 
+ 
+```{r}
+ProductsInOrderPercentage2 = order_item_data %>% inner_join(orders) %>% 
+  group_by(user_id, product_id) %>% mutate(nOfProds = n()) %>%
+  inner_join(nOrders,by="user_id") %>% mutate(Percentage = nOfProds/no_orders) %>% 
+  select(user_id, product_id,order_id.y,Percentage,nOfProds,no_orders)%>% arrange(user_id,product_id,order_id.y) %>%
+  arrange(desc(Percentage)) 
+ProductsInOrderPercentage2[ProductsInOrderPercentage2$user_id==17155,]
+```
+ 
+This showsthe corresponding percentage of products w.r.t orders
+
+```{r}
+nrow(ProductsInOrderPercentage2[(ProductsInOrderPercentage2$user_id==17155 & ProductsInOrderPercentage2$Percentage >=1),])
+nrow(ProductsInOrderPercentage2[(ProductsInOrderPercentage2$user_id==17155 & ProductsInOrderPercentage2$Percentage <1),])
+```
+
+Above shows the percentage segregation of products.
+
+Perform Logistic regression using percentage of products, no. of orders and probability of occurence
+
+```{r}
+trainOrdersDays = orders %>% filter(eval_set == "train") %>% select(order_id, user_id, days_since_prior_order)
+head(trainOrdersDays)
+trainOrdersItems = Order_Items_Train_Data %>% filter(reordered == 1)%>% 
+  group_by(order_id) %>% mutate(prods = paste0(product_id, collapse = " "))  %>%
+  select(order_id, prods) %>% unique()
+head(trainOrdersItems)
+```
+
+Split the products listed in prods. create a UDF for this
+
+```{r}
+word.in.sentence = function(word, sentence){
+  word %in% strsplit(sentence, split = " ")[[1]]
+}
+ItemsInOrders = trainOrdersDays %>% inner_join(ProductsInOrderPercentage2) %>% inner_join(trainOrdersItems) %>% group_by(order_id) %>% 
+  mutate(Exists = word.in.sentence(product_id, prods)) %>% data.frame()
+head(ItemsInOrders)
+
+```
+
+Predict the possibility of product existing in user basket based on predictors "days_since_prior_order" from the user and "Percentage of products" out of all the orders created.
+
+Run a logistic regression model.
+
+```{r}
+LinearRelation = glm(Exists ~ Percentage + days_since_prior_order, data = ItemsInOrders, family = binomial)
+summary(LinearRelation)
+```
+
+The results from logistic model showed a negative trend from days_since_prior_order and positive trend from perentage.  That means, there is lesser possibility of Users buying a product if there is a big time difference from their last order and higher the percentage of items;higher the probability of buying items.
+
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
